@@ -5,6 +5,7 @@
 
 <body>
     <script src="https://cdn.jsdelivr.net/npm/onnxjs/dist/onnx.min.js"></script>
+    <script src="/marchingcubes.js"></script>
     <script>
         "use strict";
 
@@ -101,6 +102,7 @@
 
         const normalDistribution = new Ziggurat();
         const LATENT_CODE_SIZE = 128;
+        const resolution = 16;
 
         function getGrid(resolution) {
             var values = new Array(Math.pow(resolution, 3) * 3);
@@ -136,19 +138,76 @@
             return new onnx.Tensor(result, 'float32', [repeats, LATENT_CODE_SIZE]);
         }
 
-        const onnxSession = new onnx.InferenceSession();
-        
-        const resolution = 16;
-        var grid = getGrid(resolution);
-        var latentCode = repeatLatentCode(getRandomLatentCode(), Math.pow(resolution, 3));
-        console.log(latentCode);
+        function padVolume(voxels, resolution) {
+            var paddedResolution = resolution + 2;
+            var result = new Float32Array(Math.pow(paddedResolution, 3));
+            result.fill(1);
+            for (var x = 0; x < resolution; x++) {
+                for (var y = 0; y < resolution; y++) {
+                    for (var z = 0; z < resolution; z++) {
+                        result[(x + 1) * paddedResolution * paddedResolution + (y + 1) * paddedResolution + z + 1] = voxels[x * resolution * resolution + y * resolution + z];
+                    }
+                }
+            }
+            return result;
+        }
 
+        function writeVector(view, offset, vector) {
+            view.setFloat32(offset, vector[2], true);
+            view.setFloat32(offset + 4, vector[0], true);
+            view.setFloat32(offset + 8, vector[1], true);
+        }
+
+        function createSTLFile(mesh) {
+            var size = 84 + 50 * mesh.triangles.length;
+            var buffer = new ArrayBuffer(size);
+            let view = new DataView(buffer, 0, size);
+
+            for (var i = 0; i < 80; i++) {
+                view.setInt8(i, 0);
+            }
+            
+            var p = 80;
+            view.setInt32(p, mesh.triangles.length, true);
+            p += 4;
+
+            for (var triangle of mesh.triangles) {
+                writeVector(view, p, [1, 0, 0]); // normal
+                writeVector(view, p + 12, mesh.vertices[triangle[0]]);
+                writeVector(view, p + 24, mesh.vertices[triangle[1]]);
+                writeVector(view, p + 36, mesh.vertices[triangle[2]]);
+                view.setInt16(p + 48, 0, true);
+                p += 50;
+            }
+
+            return buffer;
+        }
+
+        function saveSTLFile(mesh, filename = "shape.stl") {
+            let blob = new Blob([createSTLFile(mesh)], { type: "application/octet-stream" });
+            let link = document.createElement('a');
+            link.href = window.URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
+        }
+
+        const onnxSession = new onnx.InferenceSession();
+        var grid = getGrid(resolution);
+
+        function generateShape() {
+            var latentCode = repeatLatentCode(getRandomLatentCode(), Math.pow(resolution, 3));
+            onnxSession.run([grid, latentCode]).then(output => {
+                var voxels = output.values().next().value.data;
+                voxels = padVolume(voxels, resolution);
+                var paddedResolution = resolution + 2;            
+                var mesh = marchingCubes([paddedResolution, paddedResolution, paddedResolution], (x, y, z) => voxels[paddedResolution * paddedResolution * x + paddedResolution * y + z]);
+                console.log(mesh);
+                saveSTLFile(mesh);
+            });
+        }
         
         onnxSession.loadModel("/chairs.onnx").then(() => {
-            onnxSession.run([grid, latentCode]).then(output => {
-                const outputTensor = output.values().next().value;
-                console.log(`model output tensor: ${outputTensor.data}.`);
-            });
+            generateShape();
         });
     </script>
   </body>
