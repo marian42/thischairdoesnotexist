@@ -1,11 +1,26 @@
 <html>
 <head>
     <title>GAN generated chairs</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 </head>
 
 <body>
+    <div id="container"></div>
+
+    <style>
+        body {
+            padding: 0;
+            margin: 0;
+
+            color: white;
+            background-color: #171717;
+        }
+    </style>
+
     <script src="https://cdn.jsdelivr.net/npm/onnxjs/dist/onnx.min.js"></script>
-    <script src="marchingcubes.js"></script>
+    <script src="js/three.js"></script>
+    <script src="js/marchingcubes.js"></script>
     <script>
         "use strict";
 
@@ -102,7 +117,7 @@
 
         const normalDistribution = new Ziggurat();
         const LATENT_CODE_SIZE = 128;
-        const resolution = 16;
+        var resolution = 16;
 
         function getGrid(resolution) {
             var values = new Array(Math.pow(resolution, 3) * 3);
@@ -138,14 +153,14 @@
             return new onnx.Tensor(result, 'float32', [repeats, LATENT_CODE_SIZE]);
         }
 
-        function padVolume(voxels, resolution) {
+        function processVolume(voxels, resolution, offset=0.04) {
             var paddedResolution = resolution + 2;
             var result = new Float32Array(Math.pow(paddedResolution, 3));
             result.fill(1);
             for (var x = 0; x < resolution; x++) {
                 for (var y = 0; y < resolution; y++) {
                     for (var z = 0; z < resolution; z++) {
-                        result[(x + 1) * paddedResolution * paddedResolution + (y + 1) * paddedResolution + z + 1] = voxels[x * resolution * resolution + y * resolution + z];
+                        result[(x + 1) * paddedResolution * paddedResolution + (y + 1) * paddedResolution + z + 1] = voxels[x * resolution * resolution + y * resolution + z] - offset;
                     }
                 }
             }
@@ -198,17 +213,114 @@
             var latentCode = repeatLatentCode(getRandomLatentCode(), Math.pow(resolution, 3));
             onnxSession.run([grid, latentCode]).then(output => {
                 var voxels = output.values().next().value.data;
-                voxels = padVolume(voxels, resolution);
+                voxels = processVolume(voxels, resolution);
                 var paddedResolution = resolution + 2;            
                 var mesh = marchingCubes([paddedResolution, paddedResolution, paddedResolution], (x, y, z) => voxels[paddedResolution * paddedResolution * x + paddedResolution * y + z]);
-                console.log(mesh);
-                saveSTLFile(mesh);
+                updateMesh(mesh);
             });
         }
         
         onnxSession.loadModel("chairs.onnx").then(() => {
             generateShape();
         });
+
+        var scene, renderer;
+        var camera, cameraControls;
+        var geometry, meshObject;
+        var material = new THREE.MeshNormalMaterial();
+
+        function createGeometryFromMesh(mesh) {                
+            geometry = new THREE.Geometry();
+            geometry.vertices.length = 0;
+            geometry.faces.length = 0;
+
+            for (var i = 0; i < mesh.vertices.length; ++i) {
+                var v = mesh.vertices[i];
+                geometry.vertices.push(new THREE.Vector3(v[0], v[1], v[2]));
+            }
+
+            for (var i = 0; i < mesh.triangles.length; ++i) {
+                var f = mesh.triangles[i];
+                geometry.faces.push(new THREE.Face3(f[0], f[1], f[2]));
+            }
+
+            var cb = new THREE.Vector3(), ab = new THREE.Vector3();
+            for (var i = 0; i < geometry.faces.length; ++i) {
+                var f = geometry.faces[i];
+                var vA = geometry.vertices[f.a];
+                var vB = geometry.vertices[f.b];
+                var vC = geometry.vertices[f.c];
+                cb.sub(vC, vB);
+                ab.sub(vA, vB);
+                cb.crossSelf(ab);
+                cb.normalize();
+                if (mesh.triangles[i].length == 3) {
+                    f.normal.copy(cb)
+                    continue;
+                }
+                f.normal.copy(cb);
+            }
+
+            geometry.verticesNeedUpdate = true;
+            geometry.elementsNeedUpdate = true;
+            geometry.normalsNeedUpdate = true;
+
+            geometry.computeBoundingBox();
+
+            return geometry;
+        }
+
+        function updateMesh(mesh) {
+            scene.remove(meshObject);
+
+            var geometry = createGeometryFromMesh(mesh);
+            meshObject = new THREE.Mesh(geometry, material);
+
+            var boundingBox = geometry.boundingBox;
+            meshObject.position.x = -(boundingBox.max.x + boundingBox.min.x) / 2.0;
+            meshObject.position.y = -(boundingBox.max.y + boundingBox.min.y) / 2.0;
+            meshObject.position.z = -(boundingBox.max.z + boundingBox.min.z) / 2.0;
+
+            scene.add(meshObject);
+        }
+
+        initialize();
+        animate();
+
+        function initialize() {
+            renderer = new THREE.WebGLRenderer({
+                antialias: true
+            });
+            renderer.setClearColorHex(0x171717, 1);
+
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('container').appendChild(renderer.domElement);
+
+            scene = new THREE.Scene();
+
+            camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 1, 10000);
+            camera.position.set(0, 0, 40);
+            scene.add(camera);
+
+            cameraControls = new THREE.TrackballControls(camera, document.getElementById('container'))
+            
+            window.addEventListener('resize', function() {
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+            }, false);
+
+            scene.add(new THREE.AmbientLight(Math.random() * 0xffffff));
+            var light = new THREE.DirectionalLight(Math.random() * 0xffffff);
+            light.position.set(Math.random(), Math.random(), Math.random()).normalize();
+            scene.add(light);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            cameraControls.update();
+            renderer.render(scene, camera);
+        }
     </script>
   </body>
 </html>
