@@ -5,7 +5,7 @@
 
 <body>
     <script src="https://cdn.jsdelivr.net/npm/onnxjs/dist/onnx.min.js"></script>
-    <script src="/marchingcubes.js"></script>
+    <script src="marchingcubes.js"></script>
     <script>
         "use strict";
 
@@ -206,7 +206,7 @@
             });
         }
         
-        onnxSession.loadModel("/chairs.onnx").then(() => {
+        onnxSession.loadModel("chairs.onnx").then(() => {
             generateShape();
         });
     </script>
