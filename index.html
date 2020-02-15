@@ -16,8 +16,8 @@
             <button id='save'>Save STL</button>
             <span class="option">
                 <span>Resolution:</span>
-                <input type="range" min="4" max="128" value="24" id="resolution-slider">
-                <input type="number" id="resolution-text" value=24>
+                <input type="range" min="4" max="128" value="24" step="2" id="resolution-slider">
+                <input type="number" id="resolution-text" value=24 step="2">
             </span>
             <span class="option">
                 <span>Weirdness:</span>
@@ -253,6 +253,8 @@
         var currentShape = null;
         var gridCache = {};
 
+        var isGenerating = false;
+
         function getGrid(resolution) {
             if (resolution in gridCache) {
                 return gridCache[resolution];
@@ -339,26 +341,44 @@
                 this.batchCount = Math.ceil(Math.pow(resolution, 3) / BATCH_SIZE);
                 this.surfaceLevel = 0.04;
                 this.latentCodeScalingFactor = latentCodeScalingFactor;
+                this.lastUIUpdate = new Date().getTime();
             }
 
             generate() {
                 setStatus('Generating...');
+                isGenerating = true;
                 this.grid = getGrid(this.resolution);
                 this.latentCodeBatch = createLatentCodeBatch(this.latentCode, this.latentCodeScalingFactor);
                 this.sdfBatches = [];
                 this.startTime = new Date().getTime();
-                this.updateBatch();
+                var reference = this;
+                setTimeout(function() { reference.updateBatch(); }, 20);
             }
 
             updateBatch() {
+                var reference = this;
                 if (this.sdfBatches.length == this.batchCount) {
-                    this.onInferenceComplete();
+                    setStatus('Voxelizing...');
+                    setTimeout(function() { reference.onInferenceComplete(); }, 0);
                 } else {
                     var batchIndex = this.sdfBatches.length;
-                    onnxSession.run([this.grid[batchIndex], this.latentCodeBatch]).then(output => {
-                        this.sdfBatches.push(output.values().next().value.data);
-                        this.updateBatch();
-                    });
+                    var input = [reference.grid[batchIndex], reference.latentCodeBatch];
+                    var callback = function(output) {
+                        reference.sdfBatches.push(output.values().next().value.data);
+                        reference.updateBatch();
+                    }
+
+                    var now = new Date().getTime();
+
+                    if (now - this.lastUIUpdate > 400) {
+                        setStatus('Generating... ' + Math.floor(batchIndex / this.batchCount * 100) + ' %');
+                        setTimeout(function() {
+                            onnxSession.run(input).then(callback);
+                        }, 0);
+                        this.lastUIUpdate = now;
+                    } else {
+                        onnxSession.run(input).then(callback);
+                    }                    
                 }
             }
 
@@ -382,6 +402,7 @@
                     (x, y, z) => voxels[paddedResolution * paddedResolution * x + paddedResolution * y + z],
                 );
                 this.show();
+                isGenerating = false;
                 setStatus('');
             }
 
@@ -454,6 +475,9 @@
         }
 
         function updateShape() {
+            if (isGenerating) {
+                return;
+            }
             currentShape = new Shape(parameters.latentCode, parameters.resolution, parameters.latentCodeScalingFactor);
             currentShape.generate();
         }
@@ -464,7 +488,6 @@
         }
         
         onnxSession.loadModel("chairs.onnx").then(() => {
-            setStatus('Ready');
             generateShape();
         });
 
