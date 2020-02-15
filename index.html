@@ -24,11 +24,16 @@
                 <input type="range" min="0" max="2.5" value="1" step="0.02" id="weirdness-slider">
                 <input type="number" min="0" max="2.5" value="1" step="0.02" id="weirdness-text" value=1>
             </span>
+            <span class="option">
+                <span>Isosurface:</span>
+                <input type="range" min="0" max="0.1" value="0.04" step="0.002" id="level-slider">
+                <input type="number" min="0" max="0.1" value="0.04" step="0.002" id="level-text" value=1>
+            </span>
         </div>
         <div id="status">Loading model...</div>
         <div class="description-container">
             <div class="description">
-                This shape was created by a <a href="https://en.wikipedia.org/wiki/Generative_adversarial_network">generative adversarial network</a> (GAN) for 3D shapes that was trained on a <a href="https://www.shapenet.org/">dataset</a> of chairs.
+                This shape was created by a <a href="https://en.wikipedia.org/wiki/Generative_adversarial_network">generative adversarial network</a> (GAN) for 3D shapes trained on a <a href="https://www.shapenet.org/">dataset</a> of chairs.
                 <br>
                 <a href="https://arxiv.org/abs/2002.00349">Read the paper</a> &#183; 
                 <a href="https://marian42.de/article/shapegan/">Read the blog post</a> &#183;
@@ -247,7 +252,8 @@
         var parameters = {
             resolution: 24,
             latentCode: null,
-            latentCodeScalingFactor: 1
+            latentCodeScalingFactor: 1,
+            level: 0.04
         }
 
         var currentShape = null;
@@ -335,11 +341,11 @@
         }        
 
         class Shape {
-            constructor(latentCode, resolution, latentCodeScalingFactor=1) {
+            constructor(latentCode, resolution, latentCodeScalingFactor=1, level=0.04) {
                 this.latentCode = latentCode;
                 this.resolution = resolution;
                 this.batchCount = Math.ceil(Math.pow(resolution, 3) / BATCH_SIZE);
-                this.surfaceLevel = 0.04;
+                this.surfaceLevel = level;
                 this.latentCodeScalingFactor = latentCodeScalingFactor;
                 this.lastUIUpdate = new Date().getTime();
             }
@@ -401,9 +407,24 @@
                     [paddedResolution, paddedResolution, paddedResolution],
                     (x, y, z) => voxels[paddedResolution * paddedResolution * x + paddedResolution * y + z],
                 );
+                this.voxels = voxels;
                 this.show();
                 isGenerating = false;
                 setStatus('');
+            }
+
+            updateSurfaceLevel(newLevel) {
+                var difference = this.surfaceLevel - newLevel;
+                this.surfaceLevel = newLevel;
+                for (var i = 0; i < this.voxels.length; i++) {
+                    this.voxels[i] += difference;
+                }
+                var paddedResolution = this.resolution + 2;
+                this.mesh = marchingCubes(
+                    [paddedResolution, paddedResolution, paddedResolution],
+                    (x, y, z) => this.voxels[paddedResolution * paddedResolution * x + paddedResolution * y + z],
+                );
+                this.show();
             }
 
             saveSTLFile() {
@@ -478,7 +499,7 @@
             if (isGenerating) {
                 return;
             }
-            currentShape = new Shape(parameters.latentCode, parameters.resolution, parameters.latentCodeScalingFactor);
+            currentShape = new Shape(parameters.latentCode, parameters.resolution, parameters.latentCodeScalingFactor, parameters.level);
             currentShape.generate();
         }
 
@@ -539,7 +560,7 @@
         document.getElementById('generate').addEventListener('click', generateShape);
         document.getElementById('save').addEventListener('click', function() { currentShape.saveSTLFile(); });
 
-        function setUpSlider(rangeId, textId, initialValue, callback) {
+        function setUpSlider(rangeId, textId, initialValue, callback, updateLive = false) {
             var value = initialValue;
             var updatePending = false;
             document.getElementById(rangeId).addEventListener('change', function(event) {
@@ -557,7 +578,11 @@
                 if (newValue != value) {
                     value = newValue;
                     document.getElementById(textId).value = value;
-                    updatePending = true;
+                    if (updateLive) {
+                        callback(value);
+                    } else {
+                        updatePending = true;
+                    }
                 }
             });
             document.getElementById(textId).addEventListener('change', function(event) {
@@ -578,6 +603,10 @@
             parameters.latentCodeScalingFactor = value;
             updateShape();
         });
+        setUpSlider('level-slider', 'level-text', parameters.latentCodeScalingFactor, function(value) {
+            parameters.level = value;
+            currentShape.updateSurfaceLevel(value);
+        }, true);
     </script>
   </body>
 </html>
