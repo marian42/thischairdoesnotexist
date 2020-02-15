@@ -1,6 +1,6 @@
 <html>
 <head>
-    <title>GAN generated chairs</title>
+    <title>GAN-generated Chairs</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <link rel="icon" type="image/png" href="favicon.png">
@@ -16,6 +16,17 @@
             <button id='save'>Save STL</button>
         </div>
         <div id="status">Loading model...</div>
+        <div class="description-container">
+            <div class="description">
+                This shape was created by a <a href="https://en.wikipedia.org/wiki/Generative_adversarial_network">generative adversarial network</a> (GAN) for 3D shapes that was trained on a <a href="https://www.shapenet.org/">dataset</a> of chairs.
+                <br>
+                <a href="https://arxiv.org/abs/2002.00349">Read the paper</a> &#183; 
+                <a href="https://marian42.de/article/shapegan/">Read the blog post</a> &#183;
+                <a href="https://github.com/marian42/shapegan">Source Code</a> &#183;
+                <a href="https://marian42.de/" class="dark">marian42.de</a> &#183;
+                <a href="https://marian42.de/page/imprint/" class="dark">Imprint</a>
+            </div>
+        </div>
     </div>
 
     <style>
@@ -23,9 +34,13 @@
             padding: 0;
             margin: 0;
 
-            color: white;
+            color: #bfbfbf;
             background-color: #0f1012;
             font-family: sans-serif;
+        }
+
+        a, a:visited {
+            color: #bfbfbf;
         }
 
         .overlay {
@@ -67,13 +82,34 @@
             background-color: #005aad;
         }
         button:focus {
-            outline:0;
+            outline: 0;
         }
         button:active {
-            position:relative;
-            top:1px;
+            position: relative;
+            top: 1px;
         }
 
+        .description-container {
+            position: fixed;
+            width: 100%;
+            bottom: 0px;
+            left: 0px;
+            display: block;
+            text-align: center;
+        }
+
+        .description {
+            width: calc(min(100% - 20px, 800px));
+            text-align: left;
+            display: inline-block;
+            font-size: 0.9em;
+            line-height: 1.5em;
+            padding: 10px;
+        }
+
+        a.dark {
+            color: #636363;
+        }
     </style>
 
     <script src="https://cdn.jsdelivr.net/npm/onnxjs/dist/onnx.min.js"></script>
