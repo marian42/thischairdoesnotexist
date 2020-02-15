@@ -19,7 +19,8 @@
     </style>
 
     <script src="https://cdn.jsdelivr.net/npm/onnxjs/dist/onnx.min.js"></script>
-    <script src="js/three.js"></script>
+    <script src="js/three.min.js"></script>
+    <script src="js/OrbitControls.js"></script>
     <script src="js/marchingcubes.js"></script>
     <script>
         "use strict";
@@ -250,9 +251,9 @@
                 var vA = geometry.vertices[f.a];
                 var vB = geometry.vertices[f.b];
                 var vC = geometry.vertices[f.c];
-                cb.sub(vC, vB);
-                ab.sub(vA, vB);
-                cb.crossSelf(ab);
+                cb.subVectors(vC, vB);
+                ab.subVectors(vA, vB);
+                cb = cb.cross(ab);
                 cb.normalize();
                 if (mesh.triangles[i].length == 3) {
                     f.normal.copy(cb)
@@ -284,14 +285,11 @@
             scene.add(meshObject);
         }
 
-        initialize();
-        animate();
-
         function initialize() {
             renderer = new THREE.WebGLRenderer({
                 antialias: true
             });
-            renderer.setClearColorHex(0x171717, 1);
+            renderer.setClearColor(0x171717, 1);
 
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.getElementById('container').appendChild(renderer.domElement);
@@ -302,7 +300,13 @@
             camera.position.set(0, 0, 40);
             scene.add(camera);
 
-            cameraControls = new THREE.TrackballControls(camera, document.getElementById('container'))
+            cameraControls = new THREE.OrbitControls(camera, document.getElementById('container'));
+            cameraControls.enableDamping = true;
+            cameraControls.dampingFactor = 0.1;
+            cameraControls.enablePan = false;
+            cameraControls.rotateSpeed = 1.5;
+            cameraControls.position0 = new THREE.Vector3(-29, 24, -40);
+            cameraControls.reset();
             
             window.addEventListener('resize', function() {
                 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -321,6 +325,9 @@
             cameraControls.update();
             renderer.render(scene, camera);
         }
+
+        initialize();
+        animate();
     </script>
   </body>
 </html>
