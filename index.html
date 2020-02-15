@@ -10,8 +10,8 @@
     <div id="container"></div>
 
     <div class="overlay">
-        <h1>GAN-generated Chairs</h1>
         <div class="controls">
+            <h1>GAN-generated Chairs</h1>
             <button id='generate'>Generate</button>
             <button id='save'>Save STL</button>
             <span class="option">
@@ -67,8 +67,11 @@
         }
 
         h1 {
-            text-align: center;
-            margin: 10px;
+            margin: 0px;
+            padding: 10px 0;
+            margin-right: 10px;
+            display: inline-block;
+            vertical-align: middle;
         }
 
         #status {
@@ -78,7 +81,8 @@
         }
 
         .controls {
-            text-align: center;
+            vertical-align: middle;
+            margin: 10px;
         }
 
         button {
