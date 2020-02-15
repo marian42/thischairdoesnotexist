@@ -14,9 +14,11 @@
         <div class="controls">
             <button id='generate'>Generate</button>
             <button id='save'>Save STL</button>
-            <span>Resolution:</span>
-            <input type="range" min="4" max="128" value="24" id="resolution-slider">
-            <input type="number" id="resolution-text" value=24>
+            <span class="option">
+                <span>Resolution:</span>
+                <input type="range" min="4" max="128" value="24" id="resolution-slider">
+                <input type="number" id="resolution-text" value=24>
+            </span>
         </div>
         <div id="status">Loading model...</div>
         <div class="description-container">
@@ -128,6 +130,10 @@
             border: none;
             color: #bfbfbf;
             font-size: 1em;
+        }
+
+        .option {
+            white-space:nowrap;
         }
     </style>
 
@@ -503,32 +509,39 @@
         document.getElementById('generate').addEventListener('click', generateShape);
         document.getElementById('save').addEventListener('click', function() { currentShape.saveSTLFile(); });
 
-        document.getElementById('resolution-slider').addEventListener('change', function(event) {
-            var newResolution = Number(event.target.value);
-            if (newResolution == parameters.resolution && !resolutionSliderUpdatePending) {
-                return;
-            }
-            resolutionSliderUpdatePending = false;
-            parameters.resolution = newResolution;
-            document.getElementById('resolution-text').value = parameters.resolution;
-            updateShape();
-        });
-        var resolutionSliderUpdatePending = false;
-        document.getElementById('resolution-slider').addEventListener('input', function(event) {
-            var newResolution = Number(event.target.value);
-            if (newResolution != parameters.resolution) {
-                parameters.resolution = newResolution;
-                document.getElementById('resolution-text').value = parameters.resolution;
-                resolutionSliderUpdatePending = true;
-            }
-        });
-        document.getElementById('resolution-text').addEventListener('change', function(event) {
-            var newResolution = Number(event.target.value);
-            if (newResolution == parameters.resolution) {
-                return;
-            }
-            parameters.resolution = newResolution;
-            document.getElementById('resolution-slider').value = parameters.resolution;
+        function setUpSlider(rangeId, textId, initialValue, callback) {
+            var value = initialValue;
+            var updatePending = false;
+            document.getElementById(rangeId).addEventListener('change', function(event) {
+                var newValue = Number(event.target.value);
+                if (newValue == value && !updatePending) {
+                    return;
+                }
+                updatePending = false;
+                value = newValue;
+                callback(newValue);
+            });
+            var updatePending = false;
+            document.getElementById(rangeId).addEventListener('input', function(event) {
+                var newValue = Number(event.target.value);
+                if (newValue != value) {
+                    value = newValue;
+                    document.getElementById(textId).value = value;
+                    updatePending = true;
+                }
+            });
+            document.getElementById(textId).addEventListener('change', function(event) {
+                var newValue = Number(event.target.value);
+                if (newValue == value) {
+                    return;
+                }
+                value = newValue;
+                document.getElementById(rangeId).value = value;
+                callback(newValue);
+            });
+        }
+        setUpSlider('resolution-slider', 'resolution-text', parameters.resolution, function(value) {
+            parameters.resolution = value;
             updateShape();
         });
     </script>
