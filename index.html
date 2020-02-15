@@ -212,56 +212,58 @@
 
         const normalDistribution = new Ziggurat();
         const LATENT_CODE_SIZE = 128;
-        var resolution = 16;
+        const BATCH_SIZE = 4096;
+        var resolution = 24;
 
-        var currentMesh = null;
+        var currentShape = null;
+        var gridCache = {};
 
         function getGrid(resolution) {
-            var values = new Array(Math.pow(resolution, 3) * 3);
+            if (resolution in gridCache) {
+                return gridCache[resolution];
+            }
+
+            var result = [];
+            var currentBatch = new Float32Array(BATCH_SIZE * 3);
             var p = 0;
+
             for (var x = 0; x < resolution; x++) {
                 for (var y = 0; y < resolution; y++) {
                     for (var z = 0; z < resolution; z++) {
-                        values[p + 0] = -1 + 2 * x / (resolution - 1);
-                        values[p + 1] = -1 + 2 * y / (resolution - 1);
-                        values[p + 2] = -1 + 2 * z / (resolution - 1);
+                        if (p == BATCH_SIZE * 3) {
+                            p = 0;
+                            result.push(new onnx.Tensor(currentBatch, 'float32', [BATCH_SIZE, 3]));
+                            var currentBatch = new Float32Array(BATCH_SIZE * 3);
+                        }
+
+                        currentBatch[p + 0] = -1 + 2 * x / (resolution - 1);
+                        currentBatch[p + 1] = -1 + 2 * y / (resolution - 1);
+                        currentBatch[p + 2] = -1 + 2 * z / (resolution - 1);
                         p += 3;
                     }
                 }
             }
-            return new onnx.Tensor(values, 'float32', [Math.pow(resolution, 3), 3]);
+            result.push(new onnx.Tensor(currentBatch, 'float32', [BATCH_SIZE, 3]));
+            gridCache[resolution] = result;
+            return result;
         }
 
         function getRandomLatentCode() {
-            var values = new Array(LATENT_CODE_SIZE);
+            var values = new Float32Array(LATENT_CODE_SIZE);
             for (var i = 0; i < LATENT_CODE_SIZE; i++) {
                 values[i] = normalDistribution.nextGaussian();
             }
             return values;
         }
 
-        function repeatLatentCode(code, repeats) {
-            var result = new Array(LATENT_CODE_SIZE * repeats);            
-            for (var i = 0; i < repeats; i++) {
+        function createLatentCodeBatch(code) {
+            var result = new Float32Array(LATENT_CODE_SIZE * BATCH_SIZE);            
+            for (var i = 0; i < BATCH_SIZE; i++) {
                 for (var j = 0; j < LATENT_CODE_SIZE; j++) {
                     result[i * LATENT_CODE_SIZE + j] = code[j];
                 }
             }
-            return new onnx.Tensor(result, 'float32', [repeats, LATENT_CODE_SIZE]);
-        }
-
-        function processVolume(voxels, resolution, offset=0.04) {
-            var paddedResolution = resolution + 2;
-            var result = new Float32Array(Math.pow(paddedResolution, 3));
-            result.fill(1);
-            for (var x = 0; x < resolution; x++) {
-                for (var y = 0; y < resolution; y++) {
-                    for (var z = 0; z < resolution; z++) {
-                        result[(x + 1) * paddedResolution * paddedResolution + (y + 1) * paddedResolution + z + 1] = voxels[x * resolution * resolution + y * resolution + z] - offset;
-                    }
-                }
-            }
-            return result;
+            return new onnx.Tensor(result, 'float32', [BATCH_SIZE, LATENT_CODE_SIZE]);
         }
 
         function writeVector(view, offset, vector) {
@@ -293,34 +295,130 @@
             }
 
             return buffer;
-        }
+        }        
 
-        function saveSTLFile() {
-            let blob = new Blob([createSTLFile(currentMesh)], { type: "application/octet-stream" });
-            let link = document.createElement('a');
-            link.href = window.URL.createObjectURL(blob);
-            link.download = "shape.stl";
-            link.click();
+        class Shape {
+            constructor(latentCode, resolution) {
+                this.latentCode = latentCode;
+                this.resolution = resolution;
+                this.batchCount = Math.ceil(Math.pow(resolution, 3) / BATCH_SIZE);
+                this.surfaceLevel = 0.04;
+            }
+
+            generate() {
+                setStatus('Generating...');
+                this.grid = getGrid(this.resolution);
+                this.latentCodeBatch = createLatentCodeBatch(this.latentCode);
+                this.sdfBatches = [];
+                this.updateBatch();
+            }
+
+            updateBatch() {
+                if (this.sdfBatches.length == this.batchCount) {
+                    this.onInferenceComplete();
+                } else {
+                    var batchIndex = this.sdfBatches.length;
+                    onnxSession.run([this.grid[batchIndex], this.latentCodeBatch]).then(output => {
+                        this.sdfBatches.push(output.values().next().value.data);
+                        this.updateBatch();
+                    });
+                }
+            }
+
+            onInferenceComplete() {
+                var paddedResolution = this.resolution + 2;
+                var voxels = new Float32Array(Math.pow(paddedResolution, 3));
+                voxels.fill(1);
+                for (var x = 0; x < this.resolution; x++) {
+                    for (var y = 0; y < this.resolution; y++) {
+                        for (var z = 0; z < this.resolution; z++) {
+                            var index = x * resolution * resolution + y * resolution + z;
+                            var networkOutput = this.sdfBatches[Math.floor(index / BATCH_SIZE)][index % BATCH_SIZE];
+                            voxels[(x + 1) * paddedResolution * paddedResolution + (y + 1) * paddedResolution + z + 1] = networkOutput - this.surfaceLevel;
+                        }
+                    }
+                }
+
+                this.mesh = marchingCubes(
+                    [paddedResolution, paddedResolution, paddedResolution],
+                    (x, y, z) => voxels[paddedResolution * paddedResolution * x + paddedResolution * y + z],
+                );
+                this.show();
+                setStatus('');
+            }
+
+            saveSTLFile() {
+                let blob = new Blob([createSTLFile(this.mesh)], { type: "application/octet-stream" });
+                let link = document.createElement('a');
+                link.href = window.URL.createObjectURL(blob);
+                link.download = "shape.stl";
+                link.click();
+            }
+
+            createGeometry() {                
+                geometry = new THREE.Geometry();
+                geometry.vertices.length = 0;
+                geometry.faces.length = 0;
+
+                for (var i = 0; i < this.mesh.vertices.length; ++i) {
+                    var v = this.mesh.vertices[i];
+                    geometry.vertices.push(new THREE.Vector3(v[0], v[1], v[2]));
+                }
+
+                for (var i = 0; i < this.mesh.triangles.length; ++i) {
+                    var triangle = this.mesh.triangles[i];
+                    geometry.faces.push(new THREE.Face3(triangle[0], triangle[1], triangle[2]));
+                }
+
+                var cb = new THREE.Vector3(), ab = new THREE.Vector3();
+                for (var i = 0; i < geometry.faces.length; ++i) {
+                    var triangle = geometry.faces[i];
+                    var vA = geometry.vertices[triangle.a];
+                    var vB = geometry.vertices[triangle.b];
+                    var vC = geometry.vertices[triangle.c];
+                    cb.subVectors(vC, vB);
+                    ab.subVectors(vA, vB);
+                    cb = cb.cross(ab);
+                    cb.normalize();
+                    triangle.normal.copy(cb);
+                }
+
+                geometry.verticesNeedUpdate = true;
+                geometry.elementsNeedUpdate = true;
+                geometry.normalsNeedUpdate = true;
+
+                geometry.computeBoundingBox();
+
+                return geometry;
+            }
+
+            show() {
+                scene.remove(meshObject);
+
+                var geometry = this.createGeometry();
+                meshObject = new THREE.Mesh(geometry, material);
+
+                var boundingBox = geometry.boundingBox;
+                var scale = 2 / (this.resolution + 2);
+                meshObject.position.x = -(this.resolution + 2) / 2.0 * scale;
+                meshObject.position.y = -(this.resolution + 2) / 2.0 * scale;
+                meshObject.position.z = -(this.resolution + 2) / 2.0 * scale;
+                meshObject.scale.set(scale, scale, scale);
+
+                scene.add(meshObject);
+            }
         }
 
         const onnxSession = new onnx.InferenceSession();
-        var grid = getGrid(resolution);
 
         function setStatus(value) {
             document.getElementById('status').innerText = value;
         }
 
         function generateShape() {
-            var latentCode = repeatLatentCode(getRandomLatentCode(), Math.pow(resolution, 3));
-            setStatus('Generating...');
-            onnxSession.run([grid, latentCode]).then(output => {
-                var voxels = output.values().next().value.data;
-                voxels = processVolume(voxels, resolution);
-                var paddedResolution = resolution + 2;            
-                currentMesh = marchingCubes([paddedResolution, paddedResolution, paddedResolution], (x, y, z) => voxels[paddedResolution * paddedResolution * x + paddedResolution * y + z]);
-                updateMesh(currentMesh);
-                setStatus('');
-            });
+            var latentCode = getRandomLatentCode();
+            currentShape = new Shape(latentCode, resolution);
+            currentShape.generate();
         }
         
         onnxSession.loadModel("chairs.onnx").then(() => {
@@ -332,61 +430,6 @@
         var camera, cameraControls;
         var geometry, meshObject;
         var material = new THREE.MeshNormalMaterial();
-
-        function createGeometryFromMesh(mesh) {                
-            geometry = new THREE.Geometry();
-            geometry.vertices.length = 0;
-            geometry.faces.length = 0;
-
-            for (var i = 0; i < mesh.vertices.length; ++i) {
-                var v = mesh.vertices[i];
-                geometry.vertices.push(new THREE.Vector3(v[0], v[1], v[2]));
-            }
-
-            for (var i = 0; i < mesh.triangles.length; ++i) {
-                var f = mesh.triangles[i];
-                geometry.faces.push(new THREE.Face3(f[0], f[1], f[2]));
-            }
-
-            var cb = new THREE.Vector3(), ab = new THREE.Vector3();
-            for (var i = 0; i < geometry.faces.length; ++i) {
-                var f = geometry.faces[i];
-                var vA = geometry.vertices[f.a];
-                var vB = geometry.vertices[f.b];
-                var vC = geometry.vertices[f.c];
-                cb.subVectors(vC, vB);
-                ab.subVectors(vA, vB);
-                cb = cb.cross(ab);
-                cb.normalize();
-                if (mesh.triangles[i].length == 3) {
-                    f.normal.copy(cb)
-                    continue;
-                }
-                f.normal.copy(cb);
-            }
-
-            geometry.verticesNeedUpdate = true;
-            geometry.elementsNeedUpdate = true;
-            geometry.normalsNeedUpdate = true;
-
-            geometry.computeBoundingBox();
-
-            return geometry;
-        }
-
-        function updateMesh(mesh) {
-            scene.remove(meshObject);
-
-            var geometry = createGeometryFromMesh(mesh);
-            meshObject = new THREE.Mesh(geometry, material);
-
-            var boundingBox = geometry.boundingBox;
-            meshObject.position.x = -(boundingBox.max.x + boundingBox.min.x) / 2.0;
-            meshObject.position.y = -(boundingBox.max.y + boundingBox.min.y) / 2.0;
-            meshObject.position.z = -(boundingBox.max.z + boundingBox.min.z) / 2.0;
-
-            scene.add(meshObject);
-        }
 
         function initialize() {
             renderer = new THREE.WebGLRenderer({
@@ -408,7 +451,8 @@
             cameraControls.dampingFactor = 0.1;
             cameraControls.enablePan = false;
             cameraControls.rotateSpeed = 1.5;
-            cameraControls.position0 = new THREE.Vector3(-29, 24, -40);
+            cameraControls.position0 = new THREE.Vector3(-0.528, 0.437, -0.728);
+            cameraControls.position0.multiplyScalar(6);
             cameraControls.reset();
             
             window.addEventListener('resize', function() {
@@ -428,7 +472,7 @@
         animate();
 
         document.getElementById('generate').addEventListener('click', generateShape);
-        document.getElementById('save').addEventListener('click', saveSTLFile);
+        document.getElementById('save').addEventListener('click', function() { currentShape.saveSTLFile(); });
     </script>
   </body>
 </html>
