@@ -424,10 +424,10 @@
                 meshObject = new THREE.Mesh(geometry, material);
 
                 var boundingBox = geometry.boundingBox;
-                var scale = 2 / (this.resolution + 1);
-                meshObject.position.x = -(this.resolution + 1) / 2.0 * scale;
-                meshObject.position.y = -(this.resolution + 1) / 2.0 * scale;
-                meshObject.position.z = -(this.resolution + 1) / 2.0 * scale;
+                var scale = 2 / (this.resolution);
+                meshObject.position.x = -(this.resolution) / 2.0 * scale;
+                meshObject.position.y = -(this.resolution) / 2.0 * scale;
+                meshObject.position.z = -(this.resolution) / 2.0 * scale;
                 meshObject.scale.set(scale, scale, scale);
 
                 scene.add(meshObject);
