@@ -8,14 +8,71 @@
 <body>
     <div id="container"></div>
 
+    <div class="overlay">
+        <h1>GAN-generated Chairs</h1>
+        <div class="controls">
+            <button id='generate'>Generate</button>
+            <button id='save'>Save STL</button>
+        </div>
+        <div id="status">Loading model...</div>
+    </div>
+
     <style>
         body {
             padding: 0;
             margin: 0;
 
             color: white;
-            background-color: #171717;
+            background-color: #0f1012;
+            font-family: sans-serif;
         }
+
+        .overlay {
+            position: fixed;
+            width: 100%;
+            top: 0px;
+            left: 0px;
+            display: block;
+        }
+
+        h1 {
+            text-align: center;
+            margin: 10px;
+        }
+
+        #status {
+            text-align: center;
+            height: 28px;
+            margin: 4px;
+        }
+
+        .controls {
+            text-align: center;
+        }
+
+        button {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 0 0.3em 0.3em 0;
+            border-radius: 4px;
+            box-sizing: border-box;
+            color: #FFFFFF;
+            background-color: #0076E3;
+            text-align: center;
+            transition: all 0.2s;
+            border: none;
+        }
+        button:hover {
+            background-color: #005aad;
+        }
+        button:focus {
+            outline:0;
+        }
+        button:active {
+            position:relative;
+            top:1px;
+        }
+
     </style>
 
     <script src="https://cdn.jsdelivr.net/npm/onnxjs/dist/onnx.min.js"></script>
@@ -120,6 +177,8 @@
         const LATENT_CODE_SIZE = 128;
         var resolution = 16;
 
+        var currentMesh = null;
+
         function getGrid(resolution) {
             var values = new Array(Math.pow(resolution, 3) * 3);
             var p = 0;
@@ -199,29 +258,36 @@
             return buffer;
         }
 
-        function saveSTLFile(mesh, filename = "shape.stl") {
-            let blob = new Blob([createSTLFile(mesh)], { type: "application/octet-stream" });
+        function saveSTLFile() {
+            let blob = new Blob([createSTLFile(currentMesh)], { type: "application/octet-stream" });
             let link = document.createElement('a');
             link.href = window.URL.createObjectURL(blob);
-            link.download = filename;
+            link.download = "shape.stl";
             link.click();
         }
 
         const onnxSession = new onnx.InferenceSession();
         var grid = getGrid(resolution);
 
+        function setStatus(value) {
+            document.getElementById('status').innerText = value;
+        }
+
         function generateShape() {
             var latentCode = repeatLatentCode(getRandomLatentCode(), Math.pow(resolution, 3));
+            setStatus('Generating...');
             onnxSession.run([grid, latentCode]).then(output => {
                 var voxels = output.values().next().value.data;
                 voxels = processVolume(voxels, resolution);
                 var paddedResolution = resolution + 2;            
-                var mesh = marchingCubes([paddedResolution, paddedResolution, paddedResolution], (x, y, z) => voxels[paddedResolution * paddedResolution * x + paddedResolution * y + z]);
-                updateMesh(mesh);
+                currentMesh = marchingCubes([paddedResolution, paddedResolution, paddedResolution], (x, y, z) => voxels[paddedResolution * paddedResolution * x + paddedResolution * y + z]);
+                updateMesh(currentMesh);
+                setStatus('');
             });
         }
         
         onnxSession.loadModel("chairs.onnx").then(() => {
+            setStatus('Ready');
             generateShape();
         });
 
@@ -289,7 +355,7 @@
             renderer = new THREE.WebGLRenderer({
                 antialias: true
             });
-            renderer.setClearColor(0x171717, 1);
+            renderer.setClearColor(0x0f1012, 1);
 
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.getElementById('container').appendChild(renderer.domElement);
@@ -313,11 +379,6 @@
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
             }, false);
-
-            scene.add(new THREE.AmbientLight(Math.random() * 0xffffff));
-            var light = new THREE.DirectionalLight(Math.random() * 0xffffff);
-            light.position.set(Math.random(), Math.random(), Math.random()).normalize();
-            scene.add(light);
         }
 
         function animate() {
@@ -328,6 +389,9 @@
 
         initialize();
         animate();
+
+        document.getElementById('generate').addEventListener('click', generateShape);
+        document.getElementById('save').addEventListener('click', saveSTLFile);
     </script>
   </body>
 </html>
