@@ -505,12 +505,22 @@
 
         document.getElementById('resolution-slider').addEventListener('change', function(event) {
             var newResolution = Number(event.target.value);
-            if (newResolution == parameters.resolution) {
+            if (newResolution == parameters.resolution && !resolutionSliderUpdatePending) {
                 return;
             }
+            resolutionSliderUpdatePending = false;
             parameters.resolution = newResolution;
             document.getElementById('resolution-text').value = parameters.resolution;
             updateShape();
+        });
+        var resolutionSliderUpdatePending = false;
+        document.getElementById('resolution-slider').addEventListener('input', function(event) {
+            var newResolution = Number(event.target.value);
+            if (newResolution != parameters.resolution) {
+                parameters.resolution = newResolution;
+                document.getElementById('resolution-text').value = parameters.resolution;
+                resolutionSliderUpdatePending = true;
+            }
         });
         document.getElementById('resolution-text').addEventListener('change', function(event) {
             var newResolution = Number(event.target.value);
