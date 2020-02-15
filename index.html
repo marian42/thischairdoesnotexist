@@ -19,6 +19,11 @@
                 <input type="range" min="4" max="128" value="24" id="resolution-slider">
                 <input type="number" id="resolution-text" value=24>
             </span>
+            <span class="option">
+                <span>Weirdness:</span>
+                <input type="range" min="0" max="2.5" value="1" step="0.02" id="weirdness-slider">
+                <input type="number" min="0" max="2.5" value="1" step="0.02" id="weirdness-text" value=1>
+            </span>
         </div>
         <div id="status">Loading model...</div>
         <div class="description-container">
@@ -241,7 +246,8 @@
 
         var parameters = {
             resolution: 24,
-            latentCode: null
+            latentCode: null,
+            latentCodeScalingFactor: 1
         }
 
         var currentShape = null;
@@ -285,11 +291,11 @@
             return values;
         }
 
-        function createLatentCodeBatch(code) {
+        function createLatentCodeBatch(code, scalingFactor=1) {
             var result = new Float32Array(LATENT_CODE_SIZE * BATCH_SIZE);            
             for (var i = 0; i < BATCH_SIZE; i++) {
                 for (var j = 0; j < LATENT_CODE_SIZE; j++) {
-                    result[i * LATENT_CODE_SIZE + j] = code[j];
+                    result[i * LATENT_CODE_SIZE + j] = code[j] * scalingFactor;
                 }
             }
             return new onnx.Tensor(result, 'float32', [BATCH_SIZE, LATENT_CODE_SIZE]);
@@ -327,17 +333,18 @@
         }        
 
         class Shape {
-            constructor(latentCode, resolution) {
+            constructor(latentCode, resolution, latentCodeScalingFactor=1) {
                 this.latentCode = latentCode;
                 this.resolution = resolution;
                 this.batchCount = Math.ceil(Math.pow(resolution, 3) / BATCH_SIZE);
                 this.surfaceLevel = 0.04;
+                this.latentCodeScalingFactor = latentCodeScalingFactor;
             }
 
             generate() {
                 setStatus('Generating...');
                 this.grid = getGrid(this.resolution);
-                this.latentCodeBatch = createLatentCodeBatch(this.latentCode);
+                this.latentCodeBatch = createLatentCodeBatch(this.latentCode, this.latentCodeScalingFactor);
                 this.sdfBatches = [];
                 this.startTime = new Date().getTime();
                 this.updateBatch();
@@ -447,7 +454,7 @@
         }
 
         function updateShape() {
-            currentShape = new Shape(parameters.latentCode, parameters.resolution);
+            currentShape = new Shape(parameters.latentCode, parameters.resolution, parameters.latentCodeScalingFactor);
             currentShape.generate();
         }
 
@@ -542,6 +549,10 @@
         }
         setUpSlider('resolution-slider', 'resolution-text', parameters.resolution, function(value) {
             parameters.resolution = value;
+            updateShape();
+        });
+        setUpSlider('weirdness-slider', 'weirdness-text', parameters.latentCodeScalingFactor, function(value) {
+            parameters.latentCodeScalingFactor = value;
             updateShape();
         });
     </script>
