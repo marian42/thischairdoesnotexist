@@ -77,6 +77,7 @@
             text-align: center;
             transition: all 0.2s;
             border: none;
+            cursor: pointer;
         }
         button:hover {
             background-color: #005aad;
@@ -310,6 +311,7 @@
                 this.grid = getGrid(this.resolution);
                 this.latentCodeBatch = createLatentCodeBatch(this.latentCode);
                 this.sdfBatches = [];
+                this.startTime = new Date().getTime();
                 this.updateBatch();
             }
 
@@ -326,6 +328,7 @@
             }
 
             onInferenceComplete() {
+                console.log('Inference complete. ' + this.batchCount + ' batches, resolution ' + this.resolution + ', time: ' + (new Date().getTime() - this.startTime) + 'ms');
                 var paddedResolution = this.resolution + 2;
                 var voxels = new Float32Array(Math.pow(paddedResolution, 3));
                 voxels.fill(1);
@@ -399,10 +402,10 @@
                 meshObject = new THREE.Mesh(geometry, material);
 
                 var boundingBox = geometry.boundingBox;
-                var scale = 2 / (this.resolution + 2);
-                meshObject.position.x = -(this.resolution + 2) / 2.0 * scale;
-                meshObject.position.y = -(this.resolution + 2) / 2.0 * scale;
-                meshObject.position.z = -(this.resolution + 2) / 2.0 * scale;
+                var scale = 2 / (this.resolution + 1);
+                meshObject.position.x = -(this.resolution + 1) / 2.0 * scale;
+                meshObject.position.y = -(this.resolution + 1) / 2.0 * scale;
+                meshObject.position.z = -(this.resolution + 1) / 2.0 * scale;
                 meshObject.scale.set(scale, scale, scale);
 
                 scene.add(meshObject);
