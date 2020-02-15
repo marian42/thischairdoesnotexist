@@ -14,6 +14,9 @@
         <div class="controls">
             <button id='generate'>Generate</button>
             <button id='save'>Save STL</button>
+            <span>Resolution:</span>
+            <input type="range" min="4" max="128" value="24" id="resolution-slider">
+            <input type="number" id="resolution-text" value=24>
         </div>
         <div id="status">Loading model...</div>
         <div class="description-container">
@@ -110,6 +113,21 @@
 
         a.dark {
             color: #636363;
+        }
+
+        input[type="range" i] {
+            vertical-align: middle;
+            width: 180px;
+        }
+
+        input[type="number"] {
+            width: 4em;
+            margin: 4px;
+            padding: 4px;
+            background: none;
+            border: none;
+            color: #bfbfbf;
+            font-size: 1em;
         }
     </style>
 
@@ -214,7 +232,11 @@
         const normalDistribution = new Ziggurat();
         const LATENT_CODE_SIZE = 128;
         const BATCH_SIZE = 4096;
-        var resolution = 24;
+
+        var parameters = {
+            resolution: 24,
+            latentCode: null
+        }
 
         var currentShape = null;
         var gridCache = {};
@@ -335,7 +357,7 @@
                 for (var x = 0; x < this.resolution; x++) {
                     for (var y = 0; y < this.resolution; y++) {
                         for (var z = 0; z < this.resolution; z++) {
-                            var index = x * resolution * resolution + y * resolution + z;
+                            var index = x * this.resolution * this.resolution + y * this.resolution + z;
                             var networkOutput = this.sdfBatches[Math.floor(index / BATCH_SIZE)][index % BATCH_SIZE];
                             voxels[(x + 1) * paddedResolution * paddedResolution + (y + 1) * paddedResolution + z + 1] = networkOutput - this.surfaceLevel;
                         }
@@ -418,10 +440,14 @@
             document.getElementById('status').innerText = value;
         }
 
-        function generateShape() {
-            var latentCode = getRandomLatentCode();
-            currentShape = new Shape(latentCode, resolution);
+        function updateShape() {
+            currentShape = new Shape(parameters.latentCode, parameters.resolution);
             currentShape.generate();
+        }
+
+        function generateShape() {
+            parameters.latentCode = getRandomLatentCode();
+            updateShape();
         }
         
         onnxSession.loadModel("chairs.onnx").then(() => {
@@ -476,6 +502,25 @@
 
         document.getElementById('generate').addEventListener('click', generateShape);
         document.getElementById('save').addEventListener('click', function() { currentShape.saveSTLFile(); });
+
+        document.getElementById('resolution-slider').addEventListener('change', function(event) {
+            var newResolution = Number(event.target.value);
+            if (newResolution == parameters.resolution) {
+                return;
+            }
+            parameters.resolution = newResolution;
+            document.getElementById('resolution-text').value = parameters.resolution;
+            updateShape();
+        });
+        document.getElementById('resolution-text').addEventListener('change', function(event) {
+            var newResolution = Number(event.target.value);
+            if (newResolution == parameters.resolution) {
+                return;
+            }
+            parameters.resolution = newResolution;
+            document.getElementById('resolution-slider').value = parameters.resolution;
+            updateShape();
+        });
     </script>
   </body>
 </html>
