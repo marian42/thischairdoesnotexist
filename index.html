@@ -29,6 +29,7 @@
                 <input type="range" min="0" max="0.1" value="0.04" step="0.002" id="level-slider">
                 <input type="number" min="0" max="0.1" value="0.04" step="0.002" id="level-text" value=1>
             </span>
+            <a href='#' id="permalink">Permalink</a>
         </div>
         <div id="status">Loading model...</div>
         <div class="description-container">
@@ -159,8 +160,8 @@
         "use strict";
 
         // https://filosophy.org/code/normal-distributed-random-values-in-javascript-using-the-ziggurat-algorithm/
-        function Ziggurat() {
-            var jsr = 123456789;
+        function Ziggurat(seed) {
+            var jsr = seed;
 
             var wn = Array(128);
             var fn = Array(128);
@@ -220,9 +221,6 @@
             }
 
             function zigset() {
-                // seed generator based on current time
-                jsr ^= new Date().getTime();
-
                 var m1 = 2147483648.0;
                 var dn = 3.442619855899;
                 var tn = dn;
@@ -249,11 +247,11 @@
             zigset();
         }
 
-        const normalDistribution = new Ziggurat();
         const LATENT_CODE_SIZE = 128;
         const BATCH_SIZE = 4096;
 
         var parameters = {
+            seed: null,
             resolution: 24,
             latentCode: null,
             latentCodeScalingFactor: 1,
@@ -295,7 +293,8 @@
             return result;
         }
 
-        function getRandomLatentCode() {
+        function getRandomLatentCode(seed) {
+            const normalDistribution = new Ziggurat(seed);
             var values = new Float32Array(LATENT_CODE_SIZE);
             for (var i = 0; i < LATENT_CODE_SIZE; i++) {
                 values[i] = normalDistribution.nextGaussian();
@@ -499,21 +498,63 @@
             document.getElementById('status').innerText = value;
         }
 
+        function updatePermalink() {
+            var link = '?s=' + parameters.seed.toString(16);
+            if (parameters.resolution != 24) {
+                link += '&r=' + parameters.resolution;
+            }
+            if (parameters.latentCodeScalingFactor != 1) {
+                link += '&w=' + parameters.latentCodeScalingFactor;
+            }
+            if (parameters.level != 0.04) {
+                link += '&l=' + parameters.level;
+            }
+            document.getElementById('permalink').href = link;
+        }
+        
+        function readParametersFromUrl() {
+            var items = {};
+            window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function(m, key, value) {
+                items[key] = value;
+            });
+            if ('s' in items) {
+                parameters.seed = Number.parseInt(items['s'], 16);
+                parameters.latentCode = getRandomLatentCode(parameters.seed);
+            }
+            if ('r' in items) {
+                parameters.resolution = Number.parseInt(items['r']);
+            }
+            if ('w' in items) {
+                parameters.latentCodeScalingFactor = Number.parseFloat(items['w']);
+            }
+            if ('l' in items) {
+                parameters.level = Number.parseFloat(items['l']);
+            }
+        }
+
         function updateShape() {
             if (isGenerating) {
                 return;
             }
             currentShape = new Shape(parameters.latentCode, parameters.resolution, parameters.latentCodeScalingFactor, parameters.level);
             currentShape.generate();
+            updatePermalink();
         }
 
         function generateShape() {
-            parameters.latentCode = getRandomLatentCode();
+            parameters.seed = Math.floor(Math.random() * 4294967295);
+            parameters.latentCode = getRandomLatentCode(parameters.seed);
             updateShape();
         }
+
+        readParametersFromUrl();
         
         onnxSession.loadModel("chairs.onnx").then(() => {
-            generateShape();
+            if (parameters.latentCode != null) {
+                updateShape(); // Use seed from URL
+            } else {
+                generateShape();
+            }
         });
 
         var scene, renderer;
@@ -567,7 +608,13 @@
         function setUpSlider(rangeId, textId, initialValue, callback, updateLive = false) {
             var value = initialValue;
             var updatePending = false;
-            document.getElementById(rangeId).addEventListener('change', function(event) {
+
+            var rangeElement = document.getElementById(rangeId);
+            var textElement = document.getElementById(textId);
+            rangeElement.value = value;
+            textElement.value = value;
+
+            rangeElement.addEventListener('change', function(event) {
                 var newValue = Number(event.target.value);
                 if (newValue == value && !updatePending) {
                     return;
@@ -577,11 +624,11 @@
                 callback(newValue);
             });
             var updatePending = false;
-            document.getElementById(rangeId).addEventListener('input', function(event) {
+            rangeElement.addEventListener('input', function(event) {
                 var newValue = Number(event.target.value);
                 if (newValue != value) {
                     value = newValue;
-                    document.getElementById(textId).value = value;
+                    textElement.value = value;
                     if (updateLive) {
                         callback(value);
                     } else {
@@ -589,13 +636,13 @@
                     }
                 }
             });
-            document.getElementById(textId).addEventListener('change', function(event) {
+            textElement.addEventListener('change', function(event) {
                 var newValue = Number(event.target.value);
                 if (newValue == value) {
                     return;
                 }
                 value = newValue;
-                document.getElementById(rangeId).value = value;
+                rangeElement.value = value;
                 callback(newValue);
             });
         }
@@ -607,9 +654,10 @@
             parameters.latentCodeScalingFactor = value;
             updateShape();
         });
-        setUpSlider('level-slider', 'level-text', parameters.latentCodeScalingFactor, function(value) {
+        setUpSlider('level-slider', 'level-text', parameters.level, function(value) {
             parameters.level = value;
             currentShape.updateSurfaceLevel(value);
+            updatePermalink();
         }, true);
     </script>
   </body>
